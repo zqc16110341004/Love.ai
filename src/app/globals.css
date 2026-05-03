@@ -1,26 +1,317 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ─── Design Tokens ───────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Background */
+  --bg-deep: #08080f;
+  --bg-surface: #0e0e1a;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-card-hover: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --text-primary: #f0ebe3;
+  --text-secondary: #8e899e;
+  --text-muted: #5a566a;
+
+  /* Accent – Amber gold (shared brand accent) */
+  --accent: #c9a96e;
+  --accent-light: #f5d89a;
+  --accent-glow: rgba(201, 169, 110, 0.15);
+
+  /* Glass */
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* Character: 顾以深 (Literary Gold) */
+  --wenyi-accent: #c9a96e;
+  --wenyi-accent-soft: rgba(201, 169, 110, 0.12);
+  --wenyi-glow: rgba(201, 169, 110, 0.25);
+
+  /* Character: 林默 (Moonlight Blue) */
+  --zhinan-accent: #7b9bb5;
+  --zhinan-accent-soft: rgba(123, 155, 181, 0.12);
+  --zhinan-glow: rgba(123, 155, 181, 0.25);
+
+  /* Character: 沈糖 (Rose Coral) */
+  --tianzui-accent: #e8828a;
+  --tianzui-accent-soft: rgba(232, 130, 138, 0.12);
+  --tianzui-glow: rgba(232, 130, 138, 0.25);
+
+  /* Character: 陆瑾言 (Royal Purple) */
+  --badao-accent: #9b7bb8;
+  --badao-accent-soft: rgba(155, 123, 184, 0.12);
+  --badao-glow: rgba(155, 123, 184, 0.25);
+
+  /* Grain overlay */
+  --grain-opacity: 0.03;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Base Reset ──────────────────────────────────── */
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Elegant scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ─── Film Grain Overlay ─────────────────────────── */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px;
+}
+
+/* ─── Floating Stars ─────────────────────────────── */
+.stars {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  animation: star-float linear infinite;
+}
+
+.star::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: inherit;
+  border-radius: 50%;
+  filter: blur(1px);
+}
+
+@keyframes star-float {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* ─── Glow Orb (ambient background light) ────────── */
+.glow-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+  animation: orb-drift 20s ease-in-out infinite alternate;
+}
+
+@keyframes orb-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.1); }
+  66% { transform: translate(-20px, 15px) scale(0.9); }
+  100% { transform: translate(10px, -10px) scale(1.05); }
+}
+
+/* ─── Character Card (otome game style) ──────────── */
+.character-card {
+  position: relative;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.character-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.character-card:active {
+  transform: scale(0.985);
+}
+
+/* ─── Glass Card ─────────────────────────────────── */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--glass-shadow);
+  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.glass-card:hover {
+  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Staggered Entrance ─────────────────────────── */
+.stagger-in {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: stagger-enter 0.7s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes stagger-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Fade-up for hero text ──────────────────────── */
+.fade-up {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: fade-up-enter 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes fade-up-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Breathing glow on accent elements ──────────── */
+.breathe-glow {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ─── Character accent utilities ─────────────────── */
+.accent-wenyi { color: var(--wenyi-accent); }
+.accent-zhinan { color: var(--zhinan-accent); }
+.accent-tianzui { color: var(--tianzui-accent); }
+.accent-badao { color: var(--badao-accent); }
+
+.glow-wenyi { box-shadow: 0 0 20px var(--wenyi-glow), inset 0 0 20px var(--wenyi-accent-soft); }
+.glow-zhinan { box-shadow: 0 0 20px var(--zhinan-glow), inset 0 0 20px var(--zhinan-accent-soft); }
+.glow-tianzui { box-shadow: 0 0 20px var(--tianzui-glow), inset 0 0 20px var(--tianzui-accent-soft); }
+.glow-badao { box-shadow: 0 0 20px var(--badao-glow), inset 0 0 20px var(--badao-accent-soft); }
+
+.border-glow-wenyi { border-color: rgba(201, 169, 110, 0.2); }
+.border-glow-zhinan { border-color: rgba(123, 155, 181, 0.2); }
+.border-glow-tianzui { border-color: rgba(232, 130, 138, 0.2); }
+.border-glow-badao { border-color: rgba(155, 123, 184, 0.2); }
+
+.bg-bubble-wenyi { background: rgba(201, 169, 110, 0.08); color: #f0ebe3; }
+.bg-bubble-zhinan { background: rgba(123, 155, 181, 0.08); color: #f0ebe3; }
+.bg-bubble-tianzui { background: rgba(232, 130, 138, 0.08); color: #f0ebe3; }
+.bg-bubble-badao { background: rgba(155, 123, 184, 0.08); color: #f0ebe3; }
+
+/* ─── Chat message slide-in ──────────────────────── */
+.msg-in-left {
+  animation: msg-slide-left 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+.msg-in-right {
+  animation: msg-slide-right 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes msg-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-12px) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes msg-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* ─── Pulse ring for audio playing ───────────────── */
+.pulse-ring {
+  position: relative;
+}
+
+.pulse-ring::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1px solid currentColor;
+  opacity: 0;
+  animation: pulse-ring-anim 2s ease-out infinite;
+}
+
+@keyframes pulse-ring-anim {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+/* ─── Typing indicator dots ──────────────────────── */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 0.8; }
+}
+
+/* ─── Smooth focus ring ──────────────────────────── */
+textarea:focus, input:focus, button:focus-visible {
+  outline: none;
 }

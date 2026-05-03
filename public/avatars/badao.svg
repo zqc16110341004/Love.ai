@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a0a20"/>
+      <stop offset="50%" style="stop-color:#150818"/>
+      <stop offset="100%" style="stop-color:#0e0e18"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#9b7bb8"/>
+      <stop offset="100%" style="stop-color:#7a5a98"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" fill="url(#bg)"/>
+  <!-- Crown shape -->
+  <path d="M60 90 L80 70 L100 85 L120 70 L140 90 L130 110 L70 110 Z" fill="url(#accent)" opacity="0.6"/>
+  <!-- Subtle glow circle -->
+  <circle cx="100" cy="100" r="60" fill="url(#accent)" opacity="0.15"/>
+</svg>
