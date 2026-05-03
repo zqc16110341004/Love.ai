@@ -63,7 +63,7 @@ export default function HomePage() {
           {characters.map((character, i) => (
             <Link
               key={character.id}
-              href={`/chat/${character.id}`}
+              href={`/character/${character.id}`}
               className="stagger-in character-card group relative rounded-2xl overflow-hidden"
               style={{
                 animationDelay: `${0.35 + i * 0.1}s`,

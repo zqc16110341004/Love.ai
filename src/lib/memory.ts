@@ -44,11 +44,46 @@ export async function upsertMemoryToDb(
   `;
 }
 
-// ── Stub: AI memory extraction ───────────────────────────────────────────────
+// ── AI memory extraction ─────────────────────────────────────────────────────
 export async function extractMemoryStub(
   existingSummary: string,
-  _recentMessages: { role: string; content: string }[]
+  recentMessages: { role: string; content: string }[]
 ): Promise<string> {
-  // TODO: call AI API to extract facts and merge with existing summary
-  return existingSummary;
+  if (recentMessages.length === 0) return existingSummary;
+
+  const conversation = recentMessages
+    .map((m) => `${m.role === "user" ? "用户" : "男友"}: ${m.content}`)
+    .join("\n");
+
+  const prompt = `你是一个记忆提取助手。根据下面的对话，提炼出关于"用户"的重要信息（喜好、情绪、生活状态、提到的事件等），与已有记忆合并，生成简洁的记忆摘要（不超过200字）。只输出摘要本身，不要有任何解释。
+
+已有记忆：
+${existingSummary || "（暂无）"}
+
+最新对话：
+${conversation}
+
+更新后的记忆摘要：`;
+
+  try {
+    const res = await fetch(`${process.env.AI_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.AI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: process.env.AI_MODEL ?? "deepseek-v4-flash",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    });
+    if (!res.ok) return existingSummary;
+    const data = await res.json();
+    const newSummary = data.choices?.[0]?.message?.content?.trim();
+    return newSummary || existingSummary;
+  } catch {
+    return existingSummary;
+  }
 }

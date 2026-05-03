@@ -53,3 +53,24 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const characterId = searchParams.get("characterId");
+  if (!characterId) {
+    return NextResponse.json({ error: "Missing characterId" }, { status: 400 });
+  }
+
+  const sql = getDb();
+  await sql`
+    DELETE FROM messages
+    WHERE user_id = ${session.user.id} AND character_id = ${characterId}
+  `;
+
+  return NextResponse.json({ ok: true });
+}

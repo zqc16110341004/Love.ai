@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, Send, Volume2, VolumeX, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Volume2, VolumeX, Loader2, RotateCcw } from "lucide-react";
 import type { Character, Message, CharacterId } from "@/types";
-import { getLocalMemory, setLocalMemory, extractMemoryStub } from "@/lib/memory";
+import { getLocalMemory, setLocalMemory } from "@/lib/memory";
 
 interface ChatWindowProps {
   character: Character;
@@ -66,6 +66,8 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   });
 
   const [input, setInput] = useState("");
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [audioPlaying, setAudioPlaying] = useState<string | null>(null);
@@ -217,11 +219,28 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       ]);
 
       userMessageCountRef.current += 1;
+
+      // Prompt non-logged-in users to sign in after 5 messages
+      if (!session?.user && userMessageCountRef.current === 5) {
+        setShowLoginPrompt(true);
+      }
+
       if (userMessageCountRef.current % MEMORY_TRIGGER_EVERY === 0) {
         const recent = conversationRef.current.slice(-MEMORY_TRIGGER_EVERY * 2);
-        extractMemoryStub(memory, recent).then((newSummary) => {
-          if (newSummary !== memory) saveMemory(newSummary);
-        });
+        fetch("/api/memory/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            characterId: character.id,
+            recentMessages: recent,
+            localSummary: memory,
+          }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.summary && d.summary !== memory) saveMemory(d.summary);
+          })
+          .catch(() => {});
       }
     } catch (err) {
       console.error("Chat error:", err);
@@ -245,6 +264,26 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       sendMessage();
     }
   };
+
+  const handleClearChat = useCallback(async () => {
+    if (session?.user) {
+      await fetch(`/api/messages?characterId=${character.id}`, { method: "DELETE" }).catch(() => {});
+    } else {
+      // Clear local memory too
+      setLocalMemory(character.id as CharacterId, "");
+    }
+    setMessages([{
+      id: generateId(),
+      role: "assistant",
+      content: character.openingMessage,
+      createdAt: new Date(),
+    }]);
+    conversationRef.current = [];
+    userMessageCountRef.current = 0;
+    setMemory("");
+    setShowClearConfirm(false);
+    setShowLoginPrompt(false);
+  }, [session, character.id, character.openingMessage]);
 
   const handlePlayAudio = async (messageId: string, text: string) => {
     if (audioRef.current) {
@@ -343,6 +382,18 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
             {character.tagline}
           </div>
         </div>
+
+        {/* Clear chat button */}
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          className="p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0"
+          style={{ color: "var(--text-muted)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+          aria-label="重新开始"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
 
         {/* Subtle accent line at bottom of header */}
         <div
@@ -504,8 +555,81 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           </div>
         )}
 
+        {/* Login prompt for non-logged-in users */}
+        {showLoginPrompt && (
+          <div
+            className="mx-2 mb-2 rounded-2xl p-4 flex flex-col gap-3 msg-in-left"
+            style={{
+              background: `var(--${av}-accent-soft)`,
+              border: `1px solid rgba(255,255,255,0.08)`,
+            }}
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                登录后保存这段对话 💌
+              </p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+                不登录的话，关掉页面这段聊天记录就消失了。
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => router.push("/login")}
+                className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
+                style={{
+                  background: `var(--${av}-accent)`,
+                  color: "var(--bg-deep)",
+                }}
+              >
+                立即登录 / 注册
+              </button>
+              <button
+                onClick={() => setShowLoginPrompt(false)}
+                className="px-3 py-2 rounded-xl text-xs transition-all"
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                稍后再说
+              </button>
+            </div>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
+
+      {/* ─── Clear Confirm Dialog ─── */}
+      {showClearConfirm && (
+        <div
+          className="flex-shrink-0 px-4 py-3 z-20"
+          style={{
+            background: "rgba(14,14,26,0.95)",
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <p className="text-sm text-center mb-3" style={{ color: "var(--text-secondary)" }}>
+            清空后无法恢复，确定重置这段对话吗？
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleClearChat}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={{ background: "rgba(255,71,87,0.15)", color: "#ff4757", border: "1px solid rgba(255,71,87,0.25)" }}
+            >
+              确认清空
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(false)}
+              className="flex-1 py-2.5 rounded-xl text-sm transition-all"
+              style={{ background: "rgba(255,255,255,0.05)", color: "var(--text-secondary)", border: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Input Area ─── */}
       <div
