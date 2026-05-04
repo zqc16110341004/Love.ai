@@ -384,6 +384,8 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const userMessageCountRef = useRef(0);
+  const lastSuggestionSetRef = useRef<string>(""); // used to avoid showing the exact same chips repeatedly
+  const lastSuggestionKeyRef = useRef<string>("");
   const conversationRef = useRef<{ role: "user" | "assistant"; content: string }[]>(
     initialMessages.map((m) => ({ role: m.role, content: m.content }))
   );
@@ -446,8 +448,8 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
     [session, character.id]
   );
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || isThinking || streamingId) return;
 
     const userMsg: Message = {
@@ -575,6 +577,54 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       ]);
     }
   }, [input, isThinking, streamingId, character.id, memory, saveMemory, saveMessages]);
+
+  const [replySuggestions, setReplySuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
+  const refreshSuggestions = useCallback(async () => {
+    // Keep requests bounded + avoid re-asking for the exact same context.
+    const recent = conversationRef.current.slice(-12);
+    const key = JSON.stringify({
+      c: character.id,
+      m: memoryRef.current,
+      r: recent,
+    });
+    if (key === lastSuggestionKeyRef.current) return;
+    lastSuggestionKeyRef.current = key;
+
+    setSuggestionsLoading(true);
+    try {
+      const res = await fetch("/api/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characterId: character.id,
+          recentMessages: recent,
+          memorySummary: memoryRef.current,
+        }),
+      });
+      const data = await res.json();
+      const list = Array.isArray(data?.suggestions) ? data.suggestions.filter((s: unknown) => typeof s === "string") : [];
+      const normalized = list.map((s: string) => s.trim()).filter(Boolean).slice(0, 5);
+      const signature = normalized.join("|");
+      if (normalized.length > 0 && signature !== lastSuggestionSetRef.current) {
+        lastSuggestionSetRef.current = signature;
+        setReplySuggestions(normalized);
+      }
+    } catch {
+      // ignore — keep existing suggestions
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }, [character.id]);
+
+  // Re-roll suggestions after each assistant reply completes (stream ends)
+  useEffect(() => {
+    if (streamingId) return;
+    // When thinking, we don't want to distract; wait until the assistant message is done.
+    if (isThinking) return;
+    refreshSuggestions();
+  }, [messages.length, streamingId, isThinking, refreshSuggestions]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -999,6 +1049,72 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           borderTop: "1px solid rgba(255,255,255,0.04)",
         }}
       >
+        {/* ─── First-time reply suggestions ─── */}
+        {phase === "chat" && typingDone && !isThinking && !streamingId && input.trim().length === 0 && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] tracking-[0.22em] uppercase" style={{ color: "var(--text-muted)" }}>
+                不知道怎么回？试试这些
+              </span>
+              <button
+                type="button"
+                className="text-[10px] px-2 py-1 rounded-full transition-colors cursor-pointer"
+                style={{ color: "var(--text-muted)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                onClick={() => {
+                  inputRef.current?.focus();
+                }}
+              >
+                自己输入
+              </button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {suggestionsLoading && replySuggestions.length === 0 && (
+                <>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className="flex-shrink-0 px-3 py-2 rounded-full text-xs"
+                      style={{
+                        background: "rgba(255,255,255,0.035)",
+                        border: "1px solid rgba(255,255,255,0.06)",
+                        color: "transparent",
+                        minWidth: 82,
+                      }}
+                    >
+                      占位
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {replySuggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => sendMessage(s)}
+                  disabled={isThinking || !!streamingId}
+                  className="flex-shrink-0 px-3 py-2 rounded-full text-xs transition-all cursor-pointer disabled:opacity-40"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    color: "var(--text-secondary)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = `var(--${av}-accent-soft)`;
+                    e.currentTarget.style.color = "var(--text-primary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)";
+                    e.currentTarget.style.color = "var(--text-secondary)";
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-end gap-2.5">
           <textarea
             ref={inputRef}
