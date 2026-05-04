@@ -240,7 +240,15 @@ function MemoryPanel({
 }
 
 /* ─── 记忆更新 Toast ─── */
-function MemoryToast({ character, onDone }: { character: Character; onDone: () => void }) {
+function MemoryToast({
+  character,
+  onDone,
+  onClick,
+}: {
+  character: Character;
+  onDone: () => void;
+  onClick: () => void;
+}) {
   useEffect(() => {
     const t = setTimeout(onDone, 3000);
     return () => clearTimeout(t);
@@ -248,14 +256,16 @@ function MemoryToast({ character, onDone }: { character: Character; onDone: () =
 
   return (
     <motion.div
-      className="absolute top-16 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none"
+      className="absolute top-16 left-0 right-0 z-30 flex justify-center px-4"
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.3 }}
     >
-      <div
-        className="flex items-center gap-2 px-4 py-2.5 rounded-full text-xs"
+      <button
+        type="button"
+        className="flex items-center gap-2 px-4 py-2.5 rounded-full text-xs cursor-pointer"
+        onClick={onClick}
         style={{
           background: `var(--${character.accentVar}-accent-soft)`,
           border: `1px solid rgba(255,255,255,0.08)`,
@@ -264,8 +274,8 @@ function MemoryToast({ character, onDone }: { character: Character; onDone: () =
         }}
       >
         <BookHeart className="w-3.5 h-3.5" />
-        <span>他好像记住了你说的话</span>
-      </div>
+        <span>他好像记住了你说的话 · 点我查看</span>
+      </button>
     </motion.div>
   );
 }
@@ -370,6 +380,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const [audioLoading, setAudioLoading] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [memory, setMemory] = useState("");
+  const memoryRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const userMessageCountRef = useRef(0);
@@ -393,13 +404,23 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   }, [character.id, session]);
 
   useEffect(() => {
+    memoryRef.current = memory;
+  }, [memory]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
   const saveMemory = useCallback(
     async (newSummary: string) => {
+      const hadMemoryBefore = Boolean(memoryRef.current.trim());
       setMemory(newSummary);
       setShowMemoryToast(true);
+
+      if (!hadMemoryBefore && newSummary.trim()) {
+        window.setTimeout(() => setShowMemoryPanel(true), 550);
+      }
+
       if (session?.user) {
         await fetch("/api/memory", {
           method: "POST",
@@ -646,7 +667,14 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       {/* ─── 记忆更新 Toast ─── */}
       <AnimatePresence>
         {showMemoryToast && (
-          <MemoryToast character={character} onDone={() => setShowMemoryToast(false)} />
+          <MemoryToast
+            character={character}
+            onDone={() => setShowMemoryToast(false)}
+            onClick={() => {
+              setShowMemoryToast(false);
+              setShowMemoryPanel(true);
+            }}
+          />
         )}
       </AnimatePresence>
 
