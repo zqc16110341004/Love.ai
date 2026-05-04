@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, Send, Volume2, VolumeX, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, Send, Volume2, VolumeX, Loader2, RotateCcw, BookHeart, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { Character, Message, CharacterId } from "@/types";
 import { getLocalMemory, setLocalMemory } from "@/lib/memory";
@@ -133,6 +133,143 @@ function ChatIntro({ character, onComplete }: { character: Character; onComplete
   );
 }
 
+/* ─── 记忆面板 ─── */
+function MemoryPanel({
+  character,
+  memory,
+  onClose,
+}: {
+  character: Character;
+  memory: string;
+  onClose: () => void;
+}) {
+  const av = character.accentVar;
+
+  return (
+    <motion.div
+      className="absolute inset-0 z-40 flex flex-col justify-end"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+    >
+      {/* 半透明背景 */}
+      <div className="absolute inset-0" style={{ background: "rgba(8,8,15,0.7)", backdropFilter: "blur(4px)" }} />
+
+      {/* 面板主体 */}
+      <motion.div
+        className="relative rounded-t-3xl overflow-hidden"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 320, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--bg-deep)", border: "1px solid rgba(255,255,255,0.06)", borderBottom: "none" }}
+      >
+        {/* 顶部渐变装饰 */}
+        <div
+          className="absolute top-0 left-0 right-0 h-32 pointer-events-none"
+          style={{ background: `linear-gradient(180deg, var(--${av}-accent-soft) 0%, transparent 100%)`, opacity: 0.5 }}
+        />
+
+        <div className="relative z-10 px-5 pt-5 pb-8">
+          {/* 拖动条 */}
+          <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: "rgba(255,255,255,0.15)" }} />
+
+          {/* 标题行 */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-xl overflow-hidden border flex-shrink-0"
+                style={{ borderColor: `var(--${av}-accent-soft)`, boxShadow: `0 0 12px var(--${av}-glow)` }}
+              >
+                <img src={character.avatarUrl} alt={character.name} className="w-full h-full object-cover" style={{ objectPosition: "center 15%" }} />
+              </div>
+              <div>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>他记得关于你的</p>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{character.name} 的记忆</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 记忆内容 */}
+          {memory ? (
+            <div
+              className="rounded-2xl p-4 text-sm leading-relaxed"
+              style={{
+                background: `var(--${av}-accent-soft)`,
+                border: `1px solid rgba(255,255,255,0.05)`,
+                color: "var(--text-secondary)",
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <BookHeart className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: `var(--${av}-accent)` }} />
+                <p>{memory}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                style={{ background: `var(--${av}-accent-soft)` }}
+              >
+                <BookHeart className="w-6 h-6" style={{ color: `var(--${av}-accent)` }} />
+              </div>
+              <div>
+                <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>还没有记忆</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>多聊一会儿，他会慢慢了解你</p>
+              </div>
+            </div>
+          )}
+
+          <p className="text-center text-[11px] mt-4" style={{ color: "var(--text-muted)" }}>
+            每隔几条消息，记忆会自动更新
+          </p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── 记忆更新 Toast ─── */
+function MemoryToast({ character, onDone }: { character: Character; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 3000);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <motion.div
+      className="absolute top-16 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none"
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div
+        className="flex items-center gap-2 px-4 py-2.5 rounded-full text-xs"
+        style={{
+          background: `var(--${character.accentVar}-accent-soft)`,
+          border: `1px solid rgba(255,255,255,0.08)`,
+          color: `var(--${character.accentVar}-accent)`,
+          backdropFilter: "blur(12px)",
+        }}
+      >
+        <BookHeart className="w-3.5 h-3.5" />
+        <span>他好像记住了你说的话</span>
+      </div>
+    </motion.div>
+  );
+}
+
 interface ChatWindowProps {
   character: Character;
   initialMessages?: { role: "user" | "assistant"; content: string; createdAt: string }[];
@@ -221,6 +358,9 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
     return () => clearInterval(interval);
   }, [phase, character.openingMessage, shouldShowIntro]);
 
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [showMemoryToast, setShowMemoryToast] = useState(false);
+
   const [input, setInput] = useState("");
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -259,6 +399,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const saveMemory = useCallback(
     async (newSummary: string) => {
       setMemory(newSummary);
+      setShowMemoryToast(true);
       if (session?.user) {
         await fetch("/api/memory", {
           method: "POST",
@@ -495,6 +636,20 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
         )}
       </AnimatePresence>
 
+      {/* ─── 记忆面板 ─── */}
+      <AnimatePresence>
+        {showMemoryPanel && (
+          <MemoryPanel character={character} memory={memory} onClose={() => setShowMemoryPanel(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* ─── 记忆更新 Toast ─── */}
+      <AnimatePresence>
+        {showMemoryToast && (
+          <MemoryToast character={character} onDone={() => setShowMemoryToast(false)} />
+        )}
+      </AnimatePresence>
+
       {/* ─── Header ─── */}
       <motion.header
         className="relative flex items-center gap-3 px-4 py-3.5 flex-shrink-0 z-10"
@@ -548,6 +703,24 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
             {character.tagline}
           </div>
         </div>
+
+        {/* 记忆入口 */}
+        <button
+          onClick={() => setShowMemoryPanel(true)}
+          className="p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 relative"
+          style={{ color: memory ? `var(--${av}-accent)` : "var(--text-muted)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = `var(--${av}-accent)`)}
+          onMouseLeave={(e) => (e.currentTarget.style.color = memory ? `var(--${av}-accent)` : "var(--text-muted)")}
+          aria-label="查看记忆"
+        >
+          <BookHeart className="w-4 h-4" />
+          {memory && (
+            <span
+              className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+              style={{ background: `var(--${av}-accent)` }}
+            />
+          )}
+        </button>
 
         <button
           onClick={() => setShowClearConfirm(true)}
