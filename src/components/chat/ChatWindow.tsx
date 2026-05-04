@@ -4,8 +4,134 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ArrowLeft, Send, Volume2, VolumeX, Loader2, RotateCcw } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import type { Character, Message, CharacterId } from "@/types";
 import { getLocalMemory, setLocalMemory } from "@/lib/memory";
+
+/* ─── 入场过场画面 ─── */
+function ChatIntro({ character, onComplete }: { character: Character; onComplete: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onComplete, 2200);
+    return () => clearTimeout(t);
+  }, [onComplete]);
+
+  const av = character.accentVar;
+
+  return (
+    <motion.div
+      className="absolute inset-0 z-50 flex flex-col items-center justify-center overflow-hidden"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 1.04 }}
+      transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
+      style={{ background: "var(--bg-deep)" }}
+    >
+      {/* 模糊背景 */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url(${character.avatarUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center 15%",
+          filter: "blur(24px)",
+          opacity: 0.18,
+          transform: "scale(1.12)",
+        }}
+      />
+      {/* 渐变遮罩 */}
+      <div className="absolute inset-0" style={{ background: character.cardGradient, opacity: 0.55 }} />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(8,8,15,0.7) 100%)",
+        }}
+      />
+
+      {/* 中心内容 */}
+      <div className="relative z-10 flex flex-col items-center gap-5">
+        {/* 头像光圈 */}
+        <motion.div
+          className="relative"
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.15, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
+        >
+          {/* 脉冲光晕 */}
+          <motion.div
+            className="absolute -inset-3 rounded-3xl"
+            animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.06, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              background: `radial-gradient(circle, var(--${av}-glow) 0%, transparent 70%)`,
+              filter: "blur(8px)",
+            }}
+          />
+          <div
+            className="w-28 h-28 rounded-2xl overflow-hidden border-2"
+            style={{
+              borderColor: `var(--${av}-accent-soft)`,
+              boxShadow: `0 0 32px var(--${av}-glow), 0 8px 32px rgba(0,0,0,0.4)`,
+            }}
+          >
+            <img
+              src={character.avatarUrl}
+              alt={character.name}
+              className="w-full h-full object-cover"
+              style={{ objectPosition: "center 15%" }}
+            />
+          </div>
+        </motion.div>
+
+        {/* 名字 + 标语 */}
+        <motion.div
+          className="text-center"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.5 }}
+        >
+          <h2
+            className="text-3xl font-bold tracking-wide"
+            style={{
+              color: "#fff",
+              fontFamily: "var(--font-display), 'Songti SC', serif",
+              textShadow: "0 2px 16px rgba(0,0,0,0.5)",
+            }}
+          >
+            {character.name}
+          </h2>
+          <p className="text-sm mt-1.5" style={{ color: `var(--${av}-accent)` }}>
+            {character.relationship}
+          </p>
+        </motion.div>
+
+        {/* 连接状态 */}
+        <motion.div
+          className="flex items-center gap-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.75, duration: 0.4 }}
+        >
+          <motion.span
+            className="w-1.5 h-1.5 rounded-full"
+            animate={{ opacity: [1, 0.3, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+            style={{ background: `var(--${av}-accent)` }}
+          />
+          <span className="text-xs tracking-widest" style={{ color: "var(--text-muted)" }}>
+            正在连接
+          </span>
+          <motion.span
+            className="text-xs tracking-widest"
+            animate={{ opacity: [0, 1, 0] }}
+            transition={{ duration: 1.2, repeat: Infinity, delay: 0.3 }}
+            style={{ color: "var(--text-muted)" }}
+          >
+            · · ·
+          </motion.span>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
 
 interface ChatWindowProps {
   character: Character;
@@ -47,9 +173,20 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const router = useRouter();
   const { data: session } = useSession();
 
+  const hasHistory = initialMessages.length > 0;
+  const shouldShowIntro = !hasHistory;
+
+  // "intro" → 过场动画中；"chat" → 正常聊天
+  const [phase, setPhase] = useState<"intro" | "chat">(() =>
+    shouldShowIntro ? "intro" : "chat"
+  );
+
+  // 开场白打字机进度（仅新对话用）
+  const [typingDone, setTypingDone] = useState(!shouldShowIntro);
+
   // Use server-provided history if available, otherwise show opening message
   const [messages, setMessages] = useState<Message[]>(() => {
-    if (initialMessages.length > 0) {
+    if (hasHistory) {
       return initialMessages.map((m) => ({
         id: generateId(),
         role: m.role,
@@ -60,10 +197,29 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
     return [{
       id: "opening",
       role: "assistant" as const,
-      content: character.openingMessage,
+      content: "",          // 过场结束后再打字
       createdAt: new Date(),
     }];
   });
+
+  // 过场结束 → 打字机效果打出开场白
+  useEffect(() => {
+    if (phase !== "chat" || !shouldShowIntro) return;
+    const text = character.openingMessage;
+    let i = 0;
+    const interval = setInterval(() => {
+      i++;
+      const slice = text.slice(0, i);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === "opening" ? { ...m, content: slice } : m))
+      );
+      if (i >= text.length) {
+        clearInterval(interval);
+        setTypingDone(true);
+      }
+    }, 38);
+    return () => clearInterval(interval);
+  }, [phase, character.openingMessage, shouldShowIntro]);
 
   const [input, setInput] = useState("");
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -332,9 +488,19 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       className="flex flex-col h-screen w-full max-w-lg mx-auto relative"
       style={{ background: "var(--bg-deep)" }}
     >
+      {/* ─── 入场过场画面 ─── */}
+      <AnimatePresence>
+        {phase === "intro" && (
+          <ChatIntro character={character} onComplete={() => setPhase("chat")} />
+        )}
+      </AnimatePresence>
+
       {/* ─── Header ─── */}
-      <header
+      <motion.header
         className="relative flex items-center gap-3 px-4 py-3.5 flex-shrink-0 z-10"
+        initial={shouldShowIntro ? { opacity: 0, y: -14 } : false}
+        animate={phase === "chat" ? { opacity: 1, y: 0 } : { opacity: 0, y: -14 }}
+        transition={{ duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] }}
         style={{
           background: "rgba(14, 14, 26, 0.8)",
           backdropFilter: "blur(20px)",
@@ -383,7 +549,6 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           </div>
         </div>
 
-        {/* Clear chat button */}
         <button
           onClick={() => setShowClearConfirm(true)}
           className="p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0"
@@ -395,19 +560,24 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           <RotateCcw className="w-4 h-4" />
         </button>
 
-        {/* Subtle accent line at bottom of header */}
         <div
           className="absolute bottom-0 left-1/2 -translate-x-1/2 h-px w-24"
           style={{
             background: `linear-gradient(90deg, transparent, var(--${av}-accent-soft), transparent)`,
           }}
         />
-      </header>
+      </motion.header>
 
       {/* ─── Messages ─── */}
-      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+      <motion.div
+        className="flex-1 overflow-y-auto px-4 py-5 space-y-4"
+        initial={shouldShowIntro ? { opacity: 0 } : false}
+        animate={phase === "chat" ? { opacity: 1 } : { opacity: 0 }}
+        transition={{ duration: 0.35, delay: 0.2 }}
+      >
         {messages.map((msg) => {
           const isUser = msg.role === "user";
+          const isOpeningTyping = msg.id === "opening" && !typingDone;
           return (
             <div
               key={msg.id}
@@ -415,13 +585,10 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                 isUser ? "msg-in-right" : "msg-in-left"
               }`}
             >
-              {/* Assistant avatar */}
               {!isUser && (
                 <div
                   className="w-8 h-8 rounded-lg flex-shrink-0 border overflow-hidden"
-                  style={{
-                    borderColor: "rgba(255,255,255,0.04)",
-                  }}
+                  style={{ borderColor: "rgba(255,255,255,0.04)" }}
                 >
                   <img
                     src={character.avatarUrl}
@@ -433,7 +600,6 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
               )}
 
               <div className="max-w-[78%] flex flex-col gap-1.5">
-                {/* Message bubble */}
                 <div
                   className="px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words"
                   style={
@@ -453,7 +619,15 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                   }
                 >
                   {msg.content}
+                  {/* 流式输出光标 */}
                   {streamingId === msg.id && (
+                    <span
+                      className="inline-block w-0.5 h-4 ml-0.5 rounded-sm animate-pulse"
+                      style={{ background: `var(--${av}-accent)` }}
+                    />
+                  )}
+                  {/* 打字机光标（开场白） */}
+                  {isOpeningTyping && (
                     <span
                       className="inline-block w-0.5 h-4 ml-0.5 rounded-sm animate-pulse"
                       style={{ background: `var(--${av}-accent)` }}
@@ -461,8 +635,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                   )}
                 </div>
 
-                {/* Timestamp */}
-                {streamingId !== msg.id && (
+                {streamingId !== msg.id && !isOpeningTyping && (
                   <span
                     className={`text-[10px] ${isUser ? "self-end" : "self-start"}`}
                     style={{ color: "var(--text-muted)" }}
@@ -471,8 +644,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                   </span>
                 )}
 
-                {/* TTS button */}
-                {!isUser && msg.content && streamingId !== msg.id && (
+                {!isUser && msg.content && streamingId !== msg.id && !isOpeningTyping && (
                   <button
                     onClick={() => handlePlayAudio(msg.id, msg.content)}
                     disabled={audioLoading === msg.id}
@@ -493,28 +665,20 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                           }
                     }
                     onMouseEnter={(e) => {
-                      if (audioPlaying !== msg.id) {
+                      if (audioPlaying !== msg.id)
                         e.currentTarget.style.color = `var(--${av}-accent)`;
-                      }
                     }}
                     onMouseLeave={(e) => {
-                      if (audioPlaying !== msg.id) {
+                      if (audioPlaying !== msg.id)
                         e.currentTarget.style.color = "var(--text-muted)";
-                      }
                     }}
                   >
                     {audioLoading === msg.id ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" /> 生成中...
-                      </>
+                      <><Loader2 className="w-3 h-3 animate-spin" /> 生成中...</>
                     ) : audioPlaying === msg.id ? (
-                      <>
-                        <Volume2 className="w-3 h-3" /> 播放中
-                      </>
+                      <><Volume2 className="w-3 h-3" /> 播放中</>
                     ) : (
-                      <>
-                        <VolumeX className="w-3 h-3" /> 听他说
-                      </>
+                      <><VolumeX className="w-3 h-3" /> 听他说</>
                     )}
                   </button>
                 )}
@@ -523,14 +687,11 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           );
         })}
 
-        {/* Thinking indicator */}
         {isThinking && (
           <div className="flex items-start gap-2.5 msg-in-left">
             <div
               className="w-8 h-8 rounded-lg border overflow-hidden flex-shrink-0"
-              style={{
-                borderColor: "rgba(255,255,255,0.04)",
-              }}
+              style={{ borderColor: "rgba(255,255,255,0.04)" }}
             >
               <img
                 src={character.avatarUrl}
@@ -555,7 +716,6 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           </div>
         )}
 
-        {/* Login prompt for non-logged-in users */}
         {showLoginPrompt && (
           <div
             className="mx-2 mb-2 rounded-2xl p-4 flex flex-col gap-3 msg-in-left"
@@ -576,20 +736,14 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
               <button
                 onClick={() => router.push("/login")}
                 className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
-                style={{
-                  background: `var(--${av}-accent)`,
-                  color: "var(--bg-deep)",
-                }}
+                style={{ background: `var(--${av}-accent)`, color: "var(--bg-deep)" }}
               >
                 立即登录 / 注册
               </button>
               <button
                 onClick={() => setShowLoginPrompt(false)}
                 className="px-3 py-2 rounded-xl text-xs transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  color: "var(--text-muted)",
-                }}
+                style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }}
               >
                 稍后再说
               </button>
@@ -598,7 +752,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
         )}
 
         <div ref={bottomRef} />
-      </div>
+      </motion.div>
 
       {/* ─── Clear Confirm Dialog ─── */}
       {showClearConfirm && (
@@ -632,8 +786,11 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
       )}
 
       {/* ─── Input Area ─── */}
-      <div
+      <motion.div
         className="flex-shrink-0 px-4 py-3 relative z-10"
+        initial={shouldShowIntro ? { opacity: 0, y: 14 } : false}
+        animate={phase === "chat" ? { opacity: 1, y: 0 } : { opacity: 0, y: 14 }}
+        transition={{ duration: 0.4, delay: 0.15, ease: [0.4, 0, 0.2, 1] }}
         style={{
           background: "rgba(14, 14, 26, 0.85)",
           backdropFilter: "blur(20px)",
@@ -677,22 +834,17 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
             style={{
               background: `var(--${av}-accent)`,
               color: "var(--bg-deep)",
-              boxShadow: input.trim()
-                ? `0 0 20px var(--${av}-glow)`
-                : "none",
+              boxShadow: input.trim() ? `0 0 20px var(--${av}-glow)` : "none",
             }}
             aria-label="发送"
           >
             <Send className="w-4 h-4" />
           </button>
         </div>
-        <p
-          className="text-center text-[10px] mt-2"
-          style={{ color: "var(--text-muted)" }}
-        >
+        <p className="text-center text-[10px] mt-2" style={{ color: "var(--text-muted)" }}>
           Enter 发送 · Shift+Enter 换行
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }
