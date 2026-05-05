@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { getDb } from "./db";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  secret: process.env.NEXTAUTH_SECRET ?? "love-ai-dev-secret",
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "love-ai-dev-secret",
   providers: [
     Credentials({
       credentials: {

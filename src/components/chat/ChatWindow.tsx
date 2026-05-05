@@ -280,6 +280,78 @@ function MemoryToast({
   );
 }
 
+/* ─── 登录引导（不打断对话） ─── */
+function LoginNudge({
+  character,
+  onLogin,
+  onClose,
+}: {
+  character: Character;
+  onLogin: () => void;
+  onClose: () => void;
+}) {
+  const av = character.accentVar;
+  return (
+    <motion.div
+      className="rounded-2xl p-3.5 mb-3"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.25 }}
+      style={{
+        background: "rgba(255,255,255,0.035)",
+        border: "1px solid rgba(255,255,255,0.07)",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: `var(--${av}-accent-soft)`, border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          <BookHeart className="w-4 h-4" style={{ color: `var(--${av}-accent)` }} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+            想把这段聊天留住吗？
+          </p>
+          <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            登录后可跨设备同步聊天记录与记忆，换手机也不会丢。
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              type="button"
+              onClick={onLogin}
+              className="px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer"
+              style={{ background: `var(--${av}-accent)`, color: "var(--bg-deep)" }}
+            >
+              登录解锁同步
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-2 rounded-xl text-xs transition-all cursor-pointer"
+              style={{ background: "rgba(255,255,255,0.05)", color: "var(--text-muted)", border: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              继续聊天
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer"
+          aria-label="关闭登录提示"
+          style={{ color: "var(--text-muted)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 interface ChatWindowProps {
   character: Character;
   initialMessages?: { role: "user" | "assistant"; content: string; createdAt: string }[];
@@ -372,7 +444,9 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const [showMemoryToast, setShowMemoryToast] = useState(false);
 
   const [input, setInput] = useState("");
+  const [hasUserSpoken, setHasUserSpoken] = useState(hasHistory);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const loginNudgeShownRef = useRef(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
@@ -451,6 +525,8 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || isThinking || streamingId) return;
+
+    if (!hasUserSpoken) setHasUserSpoken(true);
 
     const userMsg: Message = {
       id: generateId(),
@@ -540,8 +616,9 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
 
       userMessageCountRef.current += 1;
 
-      // Prompt non-logged-in users to sign in after 5 messages
-      if (!session?.user && userMessageCountRef.current === 5) {
+      // Gentle nudge: show once, and do not insert a "message bubble" that breaks the flow
+      if (!session?.user && !loginNudgeShownRef.current && userMessageCountRef.current >= 6) {
+        loginNudgeShownRef.current = true;
         setShowLoginPrompt(true);
       }
 
@@ -576,9 +653,24 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
         },
       ]);
     }
-  }, [input, isThinking, streamingId, character.id, memory, saveMemory, saveMessages]);
+  }, [input, isThinking, streamingId, character.id, memory, saveMemory, saveMessages, hasUserSpoken]);
 
-  const [replySuggestions, setReplySuggestions] = useState<string[]>([]);
+  const defaultFirstSuggestions = (() => {
+    // Show immediately on first entry, then AI can replace them.
+    switch (character.id) {
+      case "zhinan":
+        return ["你在吗？", "我有点累。", "我想你了。"];
+      case "tianzui":
+        return ["我也想你了～", "抱抱我嘛。", "夸夸我！"];
+      case "badao":
+        return ["我来了。", "我有点委屈。", "你哄我。"];
+      case "wenyi":
+      default:
+        return ["我刚好也想找你聊聊。", "我今天有点累。", "你在做什么？"];
+    }
+  })();
+
+  const [replySuggestions, setReplySuggestions] = useState<string[]>(defaultFirstSuggestions);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const refreshSuggestions = useCallback(async () => {
@@ -601,11 +693,14 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           characterId: character.id,
           recentMessages: recent,
           memorySummary: memoryRef.current,
+          previousSuggestions: lastSuggestionSetRef.current
+            ? lastSuggestionSetRef.current.split("|").filter(Boolean).slice(0, 6)
+            : [],
         }),
       });
       const data = await res.json();
       const list = Array.isArray(data?.suggestions) ? data.suggestions.filter((s: unknown) => typeof s === "string") : [];
-      const normalized = list.map((s: string) => s.trim()).filter(Boolean).slice(0, 5);
+      const normalized = list.map((s: string) => s.trim()).filter(Boolean).slice(0, 3);
       const signature = normalized.join("|");
       if (normalized.length > 0 && signature !== lastSuggestionSetRef.current) {
         lastSuggestionSetRef.current = signature;
@@ -618,13 +713,13 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
     }
   }, [character.id]);
 
-  // Re-roll suggestions after each assistant reply completes (stream ends)
+  // Only fetch suggestions for the very first reply of a new conversation.
   useEffect(() => {
-    if (streamingId) return;
-    // When thinking, we don't want to distract; wait until the assistant message is done.
-    if (isThinking) return;
+    if (!shouldShowIntro) return;
+    if (hasUserSpoken) return;
+    if (phase !== "chat" || !typingDone) return;
     refreshSuggestions();
-  }, [messages.length, streamingId, isThinking, refreshSuggestions]);
+  }, [shouldShowIntro, hasUserSpoken, phase, typingDone, refreshSuggestions]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -648,6 +743,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
     }]);
     conversationRef.current = [];
     userMessageCountRef.current = 0;
+    setHasUserSpoken(false);
     setMemory("");
     setShowClearConfirm(false);
     setShowLoginPrompt(false);
@@ -967,41 +1063,6 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           </div>
         )}
 
-        {showLoginPrompt && (
-          <div
-            className="mx-2 mb-2 rounded-2xl p-4 flex flex-col gap-3 msg-in-left"
-            style={{
-              background: `var(--${av}-accent-soft)`,
-              border: `1px solid rgba(255,255,255,0.08)`,
-            }}
-          >
-            <div>
-              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                登录后保存这段对话 💌
-              </p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-                不登录的话，关掉页面这段聊天记录就消失了。
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => router.push("/login")}
-                className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
-                style={{ background: `var(--${av}-accent)`, color: "var(--bg-deep)" }}
-              >
-                立即登录 / 注册
-              </button>
-              <button
-                onClick={() => setShowLoginPrompt(false)}
-                className="px-3 py-2 rounded-xl text-xs transition-all"
-                style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }}
-              >
-                稍后再说
-              </button>
-            </div>
-          </div>
-        )}
-
         <div ref={bottomRef} />
       </motion.div>
 
@@ -1049,8 +1110,18 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
           borderTop: "1px solid rgba(255,255,255,0.04)",
         }}
       >
-        {/* ─── First-time reply suggestions ─── */}
-        {phase === "chat" && typingDone && !isThinking && !streamingId && input.trim().length === 0 && (
+        <AnimatePresence>
+          {showLoginPrompt && !session?.user && (
+            <LoginNudge
+              character={character}
+              onLogin={() => router.push("/login")}
+              onClose={() => setShowLoginPrompt(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ─── First-time reply suggestions (3 defaults, AI can refine) ─── */}
+        {shouldShowIntro && !hasUserSpoken && phase === "chat" && typingDone && input.trim().length === 0 && (
           <div className="mb-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] tracking-[0.22em] uppercase" style={{ color: "var(--text-muted)" }}>
@@ -1068,31 +1139,12 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
               </button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {suggestionsLoading && replySuggestions.length === 0 && (
-                <>
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="flex-shrink-0 px-3 py-2 rounded-full text-xs"
-                      style={{
-                        background: "rgba(255,255,255,0.035)",
-                        border: "1px solid rgba(255,255,255,0.06)",
-                        color: "transparent",
-                        minWidth: 82,
-                      }}
-                    >
-                      占位
-                    </div>
-                  ))}
-                </>
-              )}
-
               {replySuggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => sendMessage(s)}
-                  disabled={isThinking || !!streamingId}
+                  disabled={suggestionsLoading || isThinking || !!streamingId}
                   className="flex-shrink-0 px-3 py-2 rounded-full text-xs transition-all cursor-pointer disabled:opacity-40"
                   style={{
                     background: "rgba(255,255,255,0.04)",
@@ -1100,6 +1152,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
                     color: "var(--text-secondary)",
                   }}
                   onMouseEnter={(e) => {
+                    if (suggestionsLoading || isThinking || streamingId) return;
                     e.currentTarget.style.borderColor = `var(--${av}-accent-soft)`;
                     e.currentTarget.style.color = "var(--text-primary)";
                   }}
@@ -1145,7 +1198,7 @@ export default function ChatWindow({ character, initialMessages = [] }: ChatWind
             }}
           />
           <button
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={!input.trim() || isThinking || !!streamingId}
             className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 flex-shrink-0 cursor-pointer disabled:opacity-20"
             style={{
